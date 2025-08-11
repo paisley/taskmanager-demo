@@ -1,0 +1,64 @@
+# Docker Compose configuration for Task Manager application
+services:
+  postgres:
+    build: ./database
+    environment:
+      POSTGRES_DB: taskmanager
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/pgsql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - DB_HOST=postgres
+      - PORT=3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  task-service:
+    build: ./task-service
+    ports:
+      - "3002:3002"
+    environment:
+      - DB_HOST=postgres
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - PORT=3002
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ui:
+    build: ./ui
+    ports:
+      - "3000:80"
+    environment:
+      - AUTH_API_URL=http://auth-service:3001/api/auth
+      - TASK_API_URL=http://task-service:3002/api/tasks
+    depends_on:
+      - auth-service
+      - task-service
+
+volumes:
+  postgres_data:
