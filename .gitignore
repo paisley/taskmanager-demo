@@ -1,0 +1,47 @@
+# Task Manager Demo - Project Specific .gitignore
+
+# Node.js
+node_modules/
+npm-debug.log*
+.npm
+
+# Build outputs
+auth-service/build/
+task-service/build/
+ui/build/
+
+# Test coverage
+auth-service/coverage/
+task-service/coverage/
+ui/coverage/
+junit.xml
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+
+# Database data (keep configs)
+postgres-data/
+
+# Docker runtime
+.docker/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI/CD artifacts
+deployment-manifest.yaml
+sonar-reports/
+
+# Temporary files
+*.tmp
+*.bak

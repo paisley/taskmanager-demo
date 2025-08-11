@@ -1,0 +1,53 @@
+# Task Manager Demo - Git Attributes
+
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# JavaScript/TypeScript files
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+
+# CSS/Styling files
+*.css text eol=lf
+
+# HTML files
+*.html text eol=lf
+
+# Configuration files
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.conf text eol=lf
+
+# Docker files
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# SQL files
+*.sql text eol=lf
+
+# Markdown and documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Pipeline files
+Jenkinsfile text eol=lf
+.gitlab-ci.yml text eol=lf
+
+# GitLab language detection overrides
+*.js gitlab-language=javascript
+*.jsx gitlab-language=javascript
+auth-service/* gitlab-language=javascript
+task-service/* gitlab-language=javascript
+ui/* gitlab-language=javascript
+
+# Exclude files from language statistics
+*.log linguist-generated=true
+coverage/* linguist-generated=true
+build/* linguist-generated=true
+node_modules/* linguist-vendored=true
