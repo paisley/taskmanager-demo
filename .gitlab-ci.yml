@@ -1,0 +1,459 @@
+# Task Manager Demo - GitLab CI/CD Pipeline
+# DevSecOps pipeline demonstrating Build, Test, Scan, Package, Deploy workflow
+
+variables:
+  # Docker Registry Configuration
+  DOCKER_REGISTRY: "registry.example.com:5000"
+  DOCKER_REPO: "task-manager"
+  
+  # Build Configuration
+  IMAGE_TAG: "${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
+  
+  # Security Tools
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GIT_DEPTH: "0"
+  
+  # Docker Configuration
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+
+# Define pipeline stages
+stages:
+  - build
+  - test
+  - security-scan
+  - quality-gate
+  - package
+  - container-scan
+  - push
+  - publish
+
+# Global configuration
+default:
+  image: node:18-alpine
+  before_script:
+    - echo "🚀 Starting pipeline for commit ${CI_COMMIT_SHORT_SHA}"
+    - echo "📋 Build ID: ${CI_PIPELINE_ID}"
+
+# Build Stage
+build:auth-service:
+  stage: build
+  script:
+    - echo "🔨 Building Auth Service..."
+    - cd auth-service
+    - npm ci
+    - npm run build --if-present
+  artifacts:
+    paths:
+      - auth-service/node_modules/
+    expire_in: 1 hour
+  cache:
+    key: auth-service-$CI_COMMIT_REF_SLUG
+    paths:
+      - auth-service/node_modules/
+
+build:task-service:
+  stage: build
+  script:
+    - echo "🔨 Building Task Service..."
+    - cd task-service
+    - npm ci
+    - npm run build --if-present
+  artifacts:
+    paths:
+      - task-service/node_modules/
+    expire_in: 1 hour
+  cache:
+    key: task-service-$CI_COMMIT_REF_SLUG
+    paths:
+      - task-service/node_modules/
+
+build:ui:
+  stage: build
+  script:
+    - echo "🔨 Building UI..."
+    - cd ui
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - ui/node_modules/
+      - ui/build/
+    expire_in: 1 hour
+  cache:
+    key: ui-$CI_COMMIT_REF_SLUG
+    paths:
+      - ui/node_modules/
+
+# Test Stage
+test:auth-service:
+  stage: test
+  dependencies:
+    - build:auth-service
+  script:
+    - echo "🧪 Testing Auth Service..."
+    - cd auth-service
+    - npm test -- --coverage --ci --testResultsProcessor=jest-junit
+  artifacts:
+    reports:
+      junit: auth-service/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: auth-service/coverage/cobertura-coverage.xml
+    paths:
+      - auth-service/coverage/
+    expire_in: 1 week
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+
+test:task-service:
+  stage: test
+  dependencies:
+    - build:task-service
+  script:
+    - echo "🧪 Testing Task Service..."
+    - cd task-service
+    - npm test -- --coverage --ci --testResultsProcessor=jest-junit
+  artifacts:
+    reports:
+      junit: task-service/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: task-service/coverage/cobertura-coverage.xml
+    paths:
+      - task-service/coverage/
+    expire_in: 1 week
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+
+test:ui:
+  stage: test
+  dependencies:
+    - build:ui
+  script:
+    - echo "🧪 Testing UI..."
+    - cd ui
+    - npm test -- --coverage --ci --testResultsProcessor=jest-junit --watchAll=false
+  artifacts:
+    reports:
+      junit: ui/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: ui/coverage/cobertura-coverage.xml
+    paths:
+      - ui/coverage/
+    expire_in: 1 week
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+
+# Security Scan Stage
+sonarqube-check:
+  stage: security-scan
+  image: 
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  dependencies:
+    - test:auth-service
+    - test:task-service
+    - test:ui
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - echo "🔍 Running SonarQube analysis..."
+    - sonar-scanner
+      -Dsonar.projectKey=${CI_PROJECT_NAME}
+      -Dsonar.projectName="${CI_PROJECT_TITLE}"
+      -Dsonar.projectVersion=${IMAGE_TAG}
+      -Dsonar.sources=.
+      -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/*.test.js,**/build/**"
+      -Dsonar.javascript.lcov.reportPaths="auth-service/coverage/lcov.info,task-service/coverage/lcov.info,ui/coverage/lcov.info"
+      -Dsonar.qualitygate.wait=true
+  allow_failure: true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+dependency-scan:
+  stage: security-scan
+  script:
+    - echo "🔒 Running dependency vulnerability scan..."
+    - apk add --no-cache jq
+    - |
+      for service in auth-service task-service ui; do
+        echo "Scanning $service..."
+        cd $service
+        npm audit --audit-level=high --json > npm-audit-report.json || true
+        
+        # Parse and display critical/high vulnerabilities
+        if [ -s npm-audit-report.json ]; then
+          echo "🚨 Vulnerabilities found in $service:"
+          jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "\(.key): \(.value.severity)"' npm-audit-report.json || true
+        fi
+        cd ..
+      done
+  artifacts:
+    paths:
+      - "*/npm-audit-report.json"
+    reports:
+      # GitLab can parse npm audit reports
+      dependency_scanning: "*/npm-audit-report.json"
+    expire_in: 1 week
+  allow_failure: true
+
+sast-scan:
+  stage: security-scan
+  script:
+    - echo "🛡️ Running static application security testing..."
+    - apk add --no-cache grep
+    - |
+      echo "🔍 Checking for hardcoded secrets..."
+      echo "Found potential secrets:"
+      grep -r "password.*=" . --include="*.js" || echo "No password patterns found"
+      grep -r "secret.*=" . --include="*.js" || echo "No secret patterns found"
+      grep -r "key.*=" . --include="*.js" || echo "No key patterns found"
+      
+      echo "🔍 Checking for SQL injection patterns..."
+      echo "Found potential SQL injection vulnerabilities:"
+      grep -r "query.*+.*\$" . --include="*.js" || echo "No SQL injection patterns found"
+      
+      echo "🔍 Checking for XSS vulnerabilities..."
+      grep -r "innerHTML.*+" . --include="*.js" || echo "No XSS patterns found"
+      
+      echo "🔍 Checking for insecure configurations..."
+      grep -r "cors.*\*" . --include="*.js" || echo "No insecure CORS found"
+  artifacts:
+    reports:
+      sast: sast-report.json
+    expire_in: 1 week
+  allow_failure: true
+
+# Quality Gate Stage
+quality-gate:
+  stage: quality-gate
+  image: curlimages/curl:latest
+  dependencies:
+    - sonarqube-check
+  script:
+    - echo "🚦 Checking SonarQube Quality Gate..."
+    - echo "Quality Gate check completed (demo mode)"
+    - echo "In production, this would fail the pipeline on quality gate failure"
+  allow_failure: true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Package Stage
+package:database:
+  stage: package
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  script:
+    - echo "📦 Building Database image..."
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/database:${IMAGE_TAG} ./database
+    - docker save ${DOCKER_REGISTRY}/${DOCKER_REPO}/database:${IMAGE_TAG} > database-image.tar
+  artifacts:
+    paths:
+      - database-image.tar
+    expire_in: 1 hour
+
+package:auth-service:
+  stage: package
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  dependencies:
+    - build:auth-service
+  script:
+    - echo "📦 Building Auth Service image..."
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/auth-service:${IMAGE_TAG} ./auth-service
+    - docker save ${DOCKER_REGISTRY}/${DOCKER_REPO}/auth-service:${IMAGE_TAG} > auth-service-image.tar
+  artifacts:
+    paths:
+      - auth-service-image.tar
+    expire_in: 1 hour
+
+package:task-service:
+  stage: package
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  dependencies:
+    - build:task-service
+  script:
+    - echo "📦 Building Task Service image..."
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/task-service:${IMAGE_TAG} ./task-service
+    - docker save ${DOCKER_REGISTRY}/${DOCKER_REPO}/task-service:${IMAGE_TAG} > task-service-image.tar
+  artifacts:
+    paths:
+      - task-service-image.tar
+    expire_in: 1 hour
+
+package:ui:
+  stage: package
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  dependencies:
+    - build:ui
+  script:
+    - echo "📦 Building UI image..."
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_REPO}/ui:${IMAGE_TAG} ./ui
+    - docker save ${DOCKER_REGISTRY}/${DOCKER_REPO}/ui:${IMAGE_TAG} > ui-image.tar
+  artifacts:
+    paths:
+      - ui-image.tar
+    expire_in: 1 hour
+
+# Container Security Scan Stage
+container-scan:
+  stage: container-scan
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  dependencies:
+    - package:database
+    - package:auth-service
+    - package:task-service
+    - package:ui
+  script:
+    - echo "🔍 Scanning container images for vulnerabilities..."
+    - |
+      for image_tar in *-image.tar; do
+        service_name=$(echo $image_tar | sed 's/-image.tar//')
+        echo "Loading and scanning $service_name..."
+        docker load < $image_tar
+        
+        # Example: Run container security scan
+        # Replace with your actual container scanning tool (Prisma, Clair, etc.)
+        echo "Scanning ${DOCKER_REGISTRY}/${DOCKER_REPO}/$service_name:${IMAGE_TAG}"
+        
+        # Simulate security scan results
+        echo "Container scan completed for $service_name"
+      done
+  artifacts:
+    reports:
+      container_scanning: container-scan-report.json
+    expire_in: 1 week
+  allow_failure: true
+
+# Push Stage
+push-images:
+  stage: push
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  dependencies:
+    - package:database
+    - package:auth-service
+    - package:task-service
+    - package:ui
+  before_script:
+    - echo "🔐 Logging into Docker registry..."
+    - echo $DOCKER_REGISTRY_PASSWORD | docker login $DOCKER_REGISTRY -u $DOCKER_REGISTRY_USER --password-stdin
+  script:
+    - echo "🚀 Pushing images to registry..."
+    - |
+      # Load and push all images
+      for image_tar in *-image.tar; do
+        service_name=$(echo $image_tar | sed 's/-image.tar//')
+        echo "Loading and pushing $service_name..."
+        docker load < $image_tar
+        docker push ${DOCKER_REGISTRY}/${DOCKER_REPO}/$service_name:${IMAGE_TAG}
+        
+        # Tag and push as latest for main branch
+        if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
+          docker tag ${DOCKER_REGISTRY}/${DOCKER_REPO}/$service_name:${IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_REPO}/$service_name:latest
+          docker push ${DOCKER_REGISTRY}/${DOCKER_REPO}/$service_name:latest
+        fi
+      done
+  after_script:
+    - docker logout $DOCKER_REGISTRY
+  only:
+    - main
+    - develop
+    - tags
+
+# Publish Artifacts Stage
+publish-artifacts:
+  stage: publish
+  dependencies:
+    - push-images
+  script:
+    - echo "📋 Publishing build artifacts..."
+    - |
+      cat > deployment-manifest.yaml << EOF
+      # Task Manager Deployment Manifest
+      # Generated by GitLab CI Pipeline ${CI_PIPELINE_ID}
+      # Commit: ${CI_COMMIT_SHORT_SHA}
+      # Timestamp: $(date -Iseconds)
+      
+      images:
+        database: ${DOCKER_REGISTRY}/${DOCKER_REPO}/database:${IMAGE_TAG}
+        auth-service: ${DOCKER_REGISTRY}/${DOCKER_REPO}/auth-service:${IMAGE_TAG}
+        task-service: ${DOCKER_REGISTRY}/${DOCKER_REPO}/task-service:${IMAGE_TAG}
+        ui: ${DOCKER_REGISTRY}/${DOCKER_REPO}/ui:${IMAGE_TAG}
+      
+      build_info:
+        pipeline_id: ${CI_PIPELINE_ID}
+        git_commit: ${CI_COMMIT_SHORT_SHA}
+        branch: ${CI_COMMIT_REF_NAME}
+        timestamp: $(date -Iseconds)
+        gitlab_url: ${CI_PIPELINE_URL}
+      
+      openshift_deployment:
+        namespace: task-manager-${CI_COMMIT_REF_SLUG}
+        replicas: 1
+        resources:
+          cpu_limit: "500m"
+          memory_limit: "512Mi"
+      EOF
+    - echo "✅ Deployment manifest created"
+    - cat deployment-manifest.yaml
+  artifacts:
+    paths:
+      - deployment-manifest.yaml
+    expire_in: 1 month
+  only:
+    - main
+    - develop
+    - tags
+
+# Trigger OpenShift Deployment (Optional)
+trigger-deployment:
+  stage: publish
+  image: curlimages/curl:latest
+  dependencies:
+    - publish-artifacts
+  script:
+    - echo "🎯 Triggering OpenShift deployment..."
+    - echo "Deployment manifest available for OpenShift:"
+    - cat deployment-manifest.yaml
+    - |
+      # Example: Trigger OpenShift deployment via webhook or API
+      # curl -X POST $OPENSHIFT_WEBHOOK_URL \
+      #   -H "Content-Type: application/json" \
+      #   -d @deployment-manifest.yaml
+    - echo "✅ Deployment trigger completed"
+  when: manual
+  only:
+    - main
+    - develop
+
+# Cleanup job
+cleanup:
+  stage: .post
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  script:
+    - echo "🧹 Cleaning up Docker resources..."
+    - docker system prune -f || true
+  when: always
+  allow_failure: true

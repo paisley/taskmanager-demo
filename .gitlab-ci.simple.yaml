@@ -1,0 +1,94 @@
+# Simple GitLab CI Pipeline for Task Manager Demo
+
+variables:
+  DOCKER_REGISTRY: "registry.example.com:5000"
+  IMAGE_TAG: "${CI_PIPELINE_ID}"
+
+stages:
+  - test
+  - scan
+  - build
+  - push
+
+# Test all services
+test:
+  stage: test
+  image: node:18-alpine
+  script:
+    - echo "🧪 Running tests..."
+    - cd auth-service && npm install && npm test
+    - cd ../task-service && npm install && npm test
+    - cd ../ui && npm install && npm run build && npm test -- --watchAll=false
+  artifacts:
+    reports:
+      junit:
+        - auth-service/junit.xml
+        - task-service/junit.xml
+        - ui/junit.xml
+
+# Security scanning
+security-scan:
+  stage: scan
+  image: node:18-alpine
+  script:
+    - echo "🔍 Running security scans..."
+    - npm audit --audit-level=high || true
+    - echo "Security scan completed"
+  allow_failure: true
+
+# SonarQube analysis
+sonarqube:
+  stage: scan
+  image: sonarsource/sonar-scanner-cli:latest
+  script:
+    - echo "📊 Running SonarQube analysis..."
+    - sonar-scanner -Dsonar.projectKey=task-manager-simple
+  allow_failure: true
+  only:
+    - main
+    - develop
+
+# Build Docker images
+build-images:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  script:
+    - echo "📦 Building Docker images..."
+    - docker build -t ${DOCKER_REGISTRY}/task-manager/auth-service:${IMAGE_TAG} ./auth-service
+    - docker build -t ${DOCKER_REGISTRY}/task-manager/task-service:${IMAGE_TAG} ./task-service
+    - docker build -t ${DOCKER_REGISTRY}/task-manager/ui:${IMAGE_TAG} ./ui
+    - docker build -t ${DOCKER_REGISTRY}/task-manager/database:${IMAGE_TAG} ./database
+
+# Push to registry
+push-to-registry:
+  stage: push
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - echo $DOCKER_REGISTRY_PASSWORD | docker login $DOCKER_REGISTRY -u $DOCKER_REGISTRY_USER --password-stdin
+  script:
+    - echo "🚀 Pushing images to registry..."
+    - docker push ${DOCKER_REGISTRY}/task-manager/auth-service:${IMAGE_TAG}
+    - docker push ${DOCKER_REGISTRY}/task-manager/task-service:${IMAGE_TAG}
+    - docker push ${DOCKER_REGISTRY}/task-manager/ui:${IMAGE_TAG}
+    - docker push ${DOCKER_REGISTRY}/task-manager/database:${IMAGE_TAG}
+    - |
+      if [ "$CI_COMMIT_REF_NAME" = "main" ]; then
+        echo "🏷️ Tagging as latest..."
+        docker tag ${DOCKER_REGISTRY}/task-manager/auth-service:${IMAGE_TAG} ${DOCKER_REGISTRY}/task-manager/auth-service:latest
+        docker tag ${DOCKER_REGISTRY}/task-manager/task-service:${IMAGE_TAG} ${DOCKER_REGISTRY}/task-manager/task-service:latest
+        docker tag ${DOCKER_REGISTRY}/task-manager/ui:${IMAGE_TAG} ${DOCKER_REGISTRY}/task-manager/ui:latest
+        docker tag ${DOCKER_REGISTRY}/task-manager/database:${IMAGE_TAG} ${DOCKER_REGISTRY}/task-manager/database:latest
+        docker push ${DOCKER_REGISTRY}/task-manager/auth-service:latest
+        docker push ${DOCKER_REGISTRY}/task-manager/task-service:latest
+        docker push ${DOCKER_REGISTRY}/task-manager/ui:latest
+        docker push ${DOCKER_REGISTRY}/task-manager/database:latest
+      fi
+  after_script:
+    - docker logout $DOCKER_REGISTRY
+  only:
+    - main
+    - develop

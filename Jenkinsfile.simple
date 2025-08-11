@@ -1,0 +1,93 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = 'registry.example.com:5000'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+    
+    stages {
+        stage('Build & Test') {
+            parallel {
+                stage('Auth Service') {
+                    steps {
+                        dir('auth-service') {
+                            sh 'npm install'
+                            sh 'npm test'
+                        }
+                    }
+                }
+                stage('Task Service') {
+                    steps {
+                        dir('task-service') {
+                            sh 'npm install'
+                            sh 'npm test'
+                        }
+                    }
+                }
+                stage('UI') {
+                    steps {
+                        dir('ui') {
+                            sh 'npm install'
+                            sh 'npm run build'
+                            sh 'npm test -- --watchAll=false'
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                echo "🔍 Running security scans..."
+                sh 'npm audit || true'
+                
+                script {
+                    def scannerHome = tool 'SonarQubeScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=task-manager-simple"
+                    }
+                }
+            }
+        }
+        
+        stage('Build Images') {
+            steps {
+                echo "📦 Building Docker images..."
+                script {
+                    docker.build("${DOCKER_REGISTRY}/task-manager/auth-service:${IMAGE_TAG}", "./auth-service")
+                    docker.build("${DOCKER_REGISTRY}/task-manager/task-service:${IMAGE_TAG}", "./task-service")
+                    docker.build("${DOCKER_REGISTRY}/task-manager/ui:${IMAGE_TAG}", "./ui")
+                    docker.build("${DOCKER_REGISTRY}/task-manager/database:${IMAGE_TAG}", "./database")
+                }
+            }
+        }
+        
+        stage('Push to Registry') {
+            steps {
+                echo "🚀 Pushing to registry..."
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-credentials') {
+                        sh "docker push ${DOCKER_REGISTRY}/task-manager/auth-service:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REGISTRY}/task-manager/task-service:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REGISTRY}/task-manager/ui:${IMAGE_TAG}"
+                        sh "docker push ${DOCKER_REGISTRY}/task-manager/database:${IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "🧹 Cleaning up..."
+            sh 'docker system prune -f || true'
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+        }
+    }
+}
