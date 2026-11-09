@@ -1,0 +1,65 @@
+# ATO Ready POA&M evidence for the Task Manager demo. Open, tracked weaknesses
+# mapped to controls. Most correspond to the intentional training vulnerabilities
+# documented in README.md.
+system: paisley/taskmanager-demo
+items:
+  - poam_id: TM-POAM-001
+    control: IA-5
+    weakness: JWT secret and database credentials are hardcoded in source and
+      docker-compose.yml.
+    status: open
+    severity: high
+    scheduled_completion: "2027-01-31"
+    milestone: Load secrets from environment variables or a secret store and fail
+      at startup when absent.
+  - poam_id: TM-POAM-002
+    control: SI-10
+    weakness: SQL injection in login and task-list queries; no input validation;
+      50MB request body limit.
+    status: open
+    severity: high
+    scheduled_completion: "2027-01-31"
+    milestone: Use parameterized queries everywhere, add request validation and
+      a sane body size limit.
+  - poam_id: TM-POAM-003
+    control: AC-3
+    weakness: Task access can be bypassed; CORS allows all origins; debug
+      endpoint exposes configuration.
+    status: open
+    severity: high
+    scheduled_completion: "2027-02-28"
+    milestone: Enforce ownership checks, restrict CORS origins, remove the debug
+      endpoint.
+  - poam_id: TM-POAM-004
+    control: SC-8
+    weakness: TLS is disabled for service and database traffic; no security
+      headers.
+    status: open
+    severity: moderate
+    scheduled_completion: "2027-03-31"
+    milestone: Enable TLS, add HSTS/CSP headers, and replace trust authentication
+      in pg_hba.conf.
+  - poam_id: TM-POAM-005
+    control: RA-5
+    weakness: Dependencies have known CVEs and no SBOM or automated dependency
+      scanning evidence is committed.
+    status: open
+    severity: moderate
+    scheduled_completion: "2027-02-28"
+    milestone: Upgrade vulnerable packages and generate CycloneDX SBOMs in CI.
+  - poam_id: TM-POAM-006
+    control: AU-12
+    weakness: No audit logging of authentication or task changes; logs contain
+      sensitive data (log_statement = all).
+    status: open
+    severity: moderate
+    scheduled_completion: "2027-03-31"
+    milestone: Add structured audit events and remove sensitive data from logs.
+  - poam_id: TM-POAM-007
+    control: CM-6
+    weakness: Containers run as root and the database uses md5 password
+      encryption.
+    status: open
+    severity: moderate
+    scheduled_completion: "2027-03-31"
+    milestone: Run as non-root users and switch to scram-sha-256.

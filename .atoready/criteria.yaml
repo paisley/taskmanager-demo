@@ -1,0 +1,210 @@
+# ATO Ready criteria for the Task Manager demo (read at run time by the ATO Ready
+# workflow). Scoped to the application (React UI, auth-service, task-service,
+# PostgreSQL configuration), not the deployment platform. Each criterion maps a
+# NIST 800-53 rev5 control to a CCI and an ASD STIG-style check, with a desired
+# posture. This is a DevSecOps training app with intentional vulnerabilities, so
+# the baseline describes the controls a hardened version should meet.
+project: paisley/taskmanager-demo
+description: >
+  Task Manager - DevSecOps sample microservices application (React UI, Node.js
+  auth and task services, PostgreSQL). Application-scoped control baseline.
+criteria:
+  - criterion_id: IA-2
+    control_id: IA-2
+    title: Identification and Authentication (Organizational Users)
+    text: >
+      Every task API request authenticates the caller with a JWT issued by the
+      auth service; unauthenticated requests are denied before any handler runs.
+    cci: CCI-000764
+    stig_check: ASD-IA-000001
+    evidence_query: >
+      authentication JWT token verify middleware unauthenticated denied login
+      auth service endpoint
+    desired_posture: applicable
+    severity: high
+
+  - criterion_id: IA-5
+    control_id: IA-5
+    title: Authenticator Management (No Hardcoded Credentials)
+    text: >
+      No JWT secrets, database passwords, or API keys are embedded in source or
+      compose files; credentials are supplied at runtime and fail loud when
+      absent. Assessed against the source-code change.
+    cci: CCI-000196
+    stig_check: ASD-IA-000002
+    evidence_query: >
+      hardcoded secret JWT_SECRET password credential string literal
+      docker-compose environment variable secret runtime
+    desired_posture: applicable
+    severity: high
+
+  - criterion_id: IA-5.1
+    control_id: IA-5(1)
+    title: Password-Based Authentication
+    text: >
+      Passwords are hashed with an adaptive algorithm (bcrypt), a password
+      complexity policy is enforced, and the database uses strong password
+      encryption (scram-sha-256, not md5).
+    cci: CCI-000205
+    stig_check: ASD-IA-000004
+    evidence_query: >
+      password policy complexity bcrypt hash md5 scram-sha-256 weak password
+      encryption
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: AC-3
+    control_id: AC-3
+    title: Access Enforcement
+    text: >
+      Users can only read, modify, or delete their own tasks; ownership is
+      checked on every task operation and CORS is restricted to known origins.
+    cci: CCI-000213
+    stig_check: ASD-AC-000009
+    evidence_query: >
+      access enforcement authorization ownership user_id task CORS origin
+      bypass permission endpoint
+    desired_posture: applicable
+    severity: high
+
+  - criterion_id: AC-6
+    control_id: AC-6
+    title: Least Privilege
+    text: >
+      Services and containers run as non-root users and the database user holds
+      only the privileges it needs; database trust authentication is not used.
+    cci: CCI-002234
+    stig_check: ASD-AC-000010
+    evidence_query: >
+      least privilege non-root user container Dockerfile pg_hba trust database
+      role privilege
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: AU-12
+    control_id: AU-12
+    title: Audit Record Generation
+    text: >
+      Authentication events and task create/update/delete operations generate
+      audit records with actor and timestamp, without logging sensitive data.
+    cci: CCI-000130
+    stig_check: ASD-AU-000020
+    evidence_query: >
+      audit record logging actor timestamp login task change log_statement
+      sensitive data
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: CM-6
+    control_id: CM-6
+    title: Configuration Settings
+    text: >
+      Container images and database settings follow secure baselines (non-root,
+      minimal packages, hardened postgresql.conf and pg_hba.conf).
+    cci: CCI-000366
+    stig_check: ASD-CM-000050
+    evidence_query: >
+      configuration baseline Dockerfile UBI postgresql.conf pg_hba.conf
+      hardening root listen_addresses
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: SC-8
+    control_id: SC-8
+    title: Transmission Confidentiality and Integrity
+    text: >
+      Traffic between the UI, services, and PostgreSQL is encrypted with TLS and
+      security headers (HSTS, CSP) are set.
+    cci: CCI-002418
+    stig_check: ASD-SC-000041
+    evidence_query: >
+      TLS HTTPS ssl encryption in transit HSTS CSP security headers cleartext
+      nginx
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: SC-28
+    control_id: SC-28
+    title: Protection of Information at Rest
+    text: >
+      Stored user and task data in PostgreSQL relies on volume/host encryption;
+      the application adds no encryption of its own. Client-side tokens are
+      stored in localStorage.
+    cci: CCI-002476
+    stig_check: ASD-SC-000040
+    evidence_query: >
+      data at rest encryption postgres volume localStorage token storage
+      confidentiality
+    desired_posture: inherited
+    severity: medium
+
+  - criterion_id: SI-10
+    control_id: SI-10
+    title: Information Input Validation
+    text: >
+      Inputs are validated and all database queries are parameterized; request
+      body size is bounded; untrusted content is escaped before rendering.
+      Assessed against the source-code change.
+    cci: CCI-001310
+    stig_check: ASD-SI-000030
+    evidence_query: >
+      input validation SQL injection parameterized query sanitization XSS
+      express.json limit request body source code change
+    desired_posture: applicable
+    severity: high
+
+  - criterion_id: SI-11
+    control_id: SI-11
+    title: Error Handling
+    text: >
+      Error responses are generic and do not disclose stack traces, SQL, or
+      configuration; no debug endpoints are exposed.
+    cci: CCI-001312
+    stig_check: ASD-SI-000031
+    evidence_query: >
+      error handling message information disclosure stack trace debug endpoint
+      configuration exposure
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: SI-2
+    control_id: SI-2
+    title: Flaw Remediation
+    text: >
+      Dependencies are kept current and known CVEs are remediated; Node.js
+      package versions are reviewed in the CI security scan stage.
+    cci: CCI-001227
+    stig_check: ASD-SI-000032
+    evidence_query: >
+      flaw remediation outdated dependency CVE npm audit upgrade vulnerable
+      package
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: RA-5
+    control_id: RA-5
+    title: Vulnerability Monitoring and Scanning
+    text: >
+      An SBOM is generated and dependency/container/SAST scans run in the
+      GitLab/Jenkins pipelines, with findings gating the build.
+    cci: CCI-001067
+    stig_check: ASD-RA-000070
+    evidence_query: >
+      vulnerability scanning SBOM dependency CVE SonarQube Prisma Cloud
+      pipeline security gate
+    desired_posture: applicable
+    severity: medium
+
+  - criterion_id: SR-3
+    control_id: SR-3
+    title: Supply Chain Controls and Processes
+    text: >
+      Third-party npm dependencies are version-pinned, tracked in an SBOM, and
+      known-vulnerable or deprecated packages are flagged for remediation.
+    cci: CCI-CM-SR3
+    stig_check: ASD-SR-000060
+    evidence_query: >
+      supply chain dependency SBOM package pinned deprecated third-party
+      vulnerability
+    desired_posture: applicable
+    severity: medium
