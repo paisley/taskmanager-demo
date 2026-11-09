@@ -1,0 +1,74 @@
+# ATO Ready SCAP/STIG evidence for the Task Manager demo. Application Security
+# and Development (ASD) STIG-style result set scoped to the application (auth-
+# service, task-service, ui, PostgreSQL config). Hand-authored snapshot based on
+# the source. This project contains INTENTIONAL vulnerabilities for DevSecOps
+# training (see README), so most rules fail by design.
+host: paisley/taskmanager-demo
+benchmark: Application Security and Development STIG
+benchmark_version: V6R1
+scanned_at: "2026-11-09T00:00:00Z"
+rules:
+  - rule_id: ASD-IA-000001
+    cci: CCI-000764
+    severity: high
+    result: fail
+    title: Authentication is JWT-based, but the debug endpoint and permissive CORS
+      (origin '*') are reachable without authentication or origin restriction.
+  - rule_id: ASD-IA-000002
+    cci: CCI-000196
+    severity: high
+    result: fail
+    title: The JWT signing secret and database credentials are hardcoded in source
+      and docker-compose.yml (e.g. JWT_SECRET, POSTGRES_PASSWORD).
+  - rule_id: ASD-IA-000004
+    cci: CCI-000205
+    severity: medium
+    result: fail
+    title: No password complexity policy is enforced and the database uses md5
+      password encryption.
+  - rule_id: ASD-AC-000009
+    cci: CCI-000213
+    severity: high
+    result: fail
+    title: Task access control can be bypassed; ownership is not consistently
+      checked when reading a task by id.
+  - rule_id: ASD-AU-000020
+    cci: CCI-000130
+    severity: medium
+    result: fail
+    title: Only console logging exists; no structured audit record of
+      authentication or task changes with actor and timestamp.
+  - rule_id: ASD-SI-000030
+    cci: CCI-001310
+    severity: high
+    result: fail
+    title: Login and task-list queries are built by string concatenation (SQL
+      injection) and inputs are not validated; JSON bodies accept up to 50MB.
+  - rule_id: ASD-SI-000031
+    cci: CCI-001312
+    severity: medium
+    result: fail
+    title: Detailed error messages and a debug endpoint disclose internal
+      configuration to callers.
+  - rule_id: ASD-SC-000041
+    cci: CCI-002418
+    severity: medium
+    result: fail
+    title: TLS is disabled (PostgreSQL ssl = off; services served over HTTP).
+  - rule_id: ASD-SC-000043
+    cci: CCI-001184
+    severity: medium
+    result: fail
+    title: Security headers (CSP, HSTS) are absent and containers run as root.
+  - rule_id: ASD-AC-000010
+    cci: CCI-002234
+    severity: medium
+    result: pass
+    title: Authentication is enforced via token verification middleware on the
+      task CRUD routes, and remaining task queries use parameterized statements.
+  - rule_id: ASD-SR-000060
+    cci: CCI-CM-SR3
+    severity: medium
+    result: fail
+    title: Dependencies are pinned but outdated with known CVEs (e.g.
+      jsonwebtoken 8.5.1, axios 0.27.2, express 4.17.1); no SBOM is generated.

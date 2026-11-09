@@ -1,0 +1,9 @@
+# Where ATO Ready finds this project's evidence artifacts in the repo. ATO Ready
+# fetches these from the pull request's head commit over the network - it never
+# reads a local checkout, so the documents below must be committed.
+#
+# A trailing slash marks a directory; every *.cyclonedx.json in it is read. One
+# that resolves to no document fails loud. NOTE: no SBOM has been generated for
+# this project yet - commit CycloneDX documents here (e.g. one per service:
+# auth-service, task-service, ui) before running ATO Ready.
+sbom_path: .athena/sbom/
