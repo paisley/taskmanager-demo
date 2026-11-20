@@ -270,11 +270,6 @@ describe('Auth Service', () => {
   });
 
   describe('Security Tests', () => {
-    it('should expose hardcoded JWT secret (security vulnerability)', () => {
-      // This test documents that the JWT secret is hardcoded
-      expect(JWT_SECRET).toBe('supersecret123');
-    });
-
     it('should not validate input fields (security vulnerability)', async () => {
       // Test that minimal validation exists but accepts invalid data
       const invalidData = {

@@ -7,19 +7,38 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Intentional security flaw: hardcoded JWT secret
-const JWT_SECRET = 'supersecret123';
+// Credentials are supplied at runtime; fail loud when absent (IA-5)
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+  return value;
+}
 
-// Intentional security flaw: overly permissive CORS
-app.use(cors({ origin: '*', credentials: true }));
+const JWT_SECRET = requireEnv('JWT_SECRET');
+const DB_PASSWORD = requireEnv('DB_PASSWORD');
+
+// CORS is restricted to an explicit allow-list of origins (AC-3)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
-// Intentional security flaw: hardcoded database credentials
 const pool = new Pool({
-  user: 'postgres',
+  user: process.env.DB_USER || 'taskmanager_app',
   host: process.env.DB_HOST || 'localhost',
-  database: 'taskmanager',
-  password: 'password123',
+  database: process.env.DB_NAME || 'taskmanager',
+  password: DB_PASSWORD,
   port: 5432,
 });
 
@@ -41,13 +60,28 @@ async function initDB() {
   }
 }
 
+// Password complexity policy (IA-5(1))
+function validatePassword(password) {
+  if (typeof password !== 'string' || password.length < 12) {
+    return 'Password must be at least 12 characters long';
+  }
+  if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    return 'Password must contain upper-case, lower-case, numeric and special characters';
+  }
+  return null;
+}
+
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     
-    // Intentional security flaw: no input validation
-    
+    const policyError = validatePassword(password);
+    if (policyError) {
+      return res.status(400).json({ error: policyError });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const result = await pool.query(
@@ -118,7 +152,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'auth' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Auth service running on port ${PORT}`);
-  initDB();
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Auth service running on port ${PORT}`);
+    initDB();
+  });
+}
+
+module.exports = app;

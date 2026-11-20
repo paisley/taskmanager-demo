@@ -6,16 +6,37 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// Intentional security flaw: overly permissive CORS
-app.use(cors({ origin: '*', credentials: true }));
+// Credentials are supplied at runtime; fail loud when absent (IA-5)
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const DB_PASSWORD = requireEnv('DB_PASSWORD');
+
+// CORS is restricted to an explicit allow-list of origins (AC-3)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' })); // Intentional flaw: no size limit
 
-// Intentional security flaw: hardcoded database credentials
 const pool = new Pool({
-  user: 'postgres',
+  user: process.env.DB_USER || 'taskmanager_app',
   host: process.env.DB_HOST || 'localhost',
-  database: 'taskmanager',
-  password: 'password123',
+  database: process.env.DB_NAME || 'taskmanager',
+  password: DB_PASSWORD,
   port: 5432,
 });
 
@@ -89,8 +110,7 @@ app.get('/api/tasks/:id', verifyToken, async (req, res) => {
   try {
     const taskId = req.params.id;
     
-    // Intentional security flaw: no authorization check if task belongs to user
-    const result = await pool.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+    const result = await pool.query('SELECT * FROM tasks WHERE id = $1 AND user_id = $2', [taskId, req.user.userId]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
@@ -126,10 +146,9 @@ app.put('/api/tasks/:id', verifyToken, async (req, res) => {
     const taskId = req.params.id;
     const { title, description, status, priority } = req.body;
     
-    // Intentional security flaw: no check if task belongs to current user
     const result = await pool.query(
-      'UPDATE tasks SET title = $1, description = $2, status = $3, priority = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING *',
-      [title, description, status, priority, taskId]
+      'UPDATE tasks SET title = $1, description = $2, status = $3, priority = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 AND user_id = $6 RETURNING *',
+      [title, description, status, priority, taskId, req.user.userId]
     );
     
     if (result.rows.length === 0) {
@@ -147,8 +166,7 @@ app.delete('/api/tasks/:id', verifyToken, async (req, res) => {
   try {
     const taskId = req.params.id;
     
-    // Intentional security flaw: no ownership verification
-    const result = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [taskId]);
+    const result = await pool.query('DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING *', [taskId, req.user.userId]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
@@ -160,25 +178,16 @@ app.delete('/api/tasks/:id', verifyToken, async (req, res) => {
   }
 });
 
-// Debug endpoint - Intentional security flaw: exposes sensitive info
-app.get('/api/debug', (req, res) => {
-  res.json({
-    environment: process.env,
-    database_config: {
-      host: pool.options.host,
-      database: pool.options.database,
-      user: pool.options.user
-    },
-    auth_service: AUTH_SERVICE_URL
-  });
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'task' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Task service running on port ${PORT}`);
-  initDB();
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Task service running on port ${PORT}`);
+    initDB();
+  });
+}
+
+module.exports = app;

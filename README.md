@@ -107,6 +107,9 @@ This application contains **47 documented security issues** across all component
 git clone <repository>
 cd task-manager-demo
 
+# Create a runtime secrets file (never commit .env) and set real values
+cp .env.example .env
+
 # Start all services
 docker-compose up --build
 
@@ -222,8 +225,14 @@ sonar-scanner
 ```bash
 # Database Configuration
 POSTGRES_DB=taskmanager
-POSTGRES_USER=postgres  
-POSTGRES_PASSWORD=password123
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<required, supplied at runtime>
+DB_USER=taskmanager_app
+DB_PASSWORD=<required, supplied at runtime>
+
+# Auth / CORS (services exit at startup if secrets are missing)
+JWT_SECRET=<required, supplied at runtime>
+ALLOWED_ORIGINS=http://localhost:3000
 
 # Service Configuration
 AUTH_SERVICE_URL=http://auth-service:3001

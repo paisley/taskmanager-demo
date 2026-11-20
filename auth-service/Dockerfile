@@ -1,9 +1,6 @@
 # Auth Service Dockerfile
 FROM registry.access.redhat.com/ubi8/ubi:latest
 
-# Intentional security flaw: running as root
-USER root
-
 WORKDIR /app
 
 # Install Node.js 18 and curl on UBI8
@@ -23,6 +20,11 @@ RUN npm install
 
 # Copy source code
 COPY . .
+
+# Run as a non-root user (AC-6)
+RUN useradd -r -u 10001 -s /sbin/nologin app \
+    && chown -R app:app /app
+USER app
 
 # Expose port used by the Auth Service
 EXPOSE 3001

@@ -20,7 +20,6 @@ RUN npm run build
 # Production: Alpine 3 + nginx
 FROM registry.example.com:5000/alpine-3:3.14
 
-# Intentional security flaw: no USER directive -> runs as root
 # Install nginx (and curl if you want health checks)
 RUN apk add --no-cache nginx curl \
     && mkdir -p /var/cache/nginx /run/nginx
@@ -33,8 +32,12 @@ COPY --from=builder /app/build /usr/share/nginx/html
 # adjust includes accordingly or drop it here:
 COPY nginx.conf /etc/nginx/http.d/default.conf
 
-# Expose port
-EXPOSE 80
+# Let the nginx user own its runtime directories so it can run non-root (AC-6)
+RUN chown -R nginx:nginx /var/cache/nginx /var/lib/nginx /var/log/nginx /run/nginx /usr/share/nginx/html
+USER nginx
+
+# Unprivileged port (non-root cannot bind 80)
+EXPOSE 8080
 
 # Start nginx in the foreground
 CMD ["nginx", "-g", "daemon off;"]

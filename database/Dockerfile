@@ -1,7 +1,6 @@
 # Task Manager Database Dockerfile
 FROM registry.access.redhat.com/ubi8/ubi:latest
 
-# Intentional security flaw: running as root
 USER root
 
 # Install PostgreSQL 16 from the official PGDG repo (official steps)
@@ -19,35 +18,20 @@ RUN id -u postgres >/dev/null 2>&1 || useradd -r -s /bin/bash postgres && \
     mkdir -p /var/lib/pgsql/data && \
     chown -R postgres:postgres /var/lib/pgsql
 
-# Set environment variables (kept from original)
+# Non-secret defaults only; POSTGRES_PASSWORD, DB_USER and DB_PASSWORD are
+# supplied at runtime and init-db.sh fails if they are absent (IA-5)
 ENV PGDATA=/var/lib/pgsql/data \
     POSTGRES_DB=taskmanager \
-    POSTGRES_USER=postgres \
-    POSTGRES_PASSWORD=password123
+    POSTGRES_USER=postgres
 
-# Copy initialization script (kept)
+# Stage configuration; init-db.sh installs it after initdb
+COPY postgresql.conf pg_hba.conf /usr/local/share/pgconf/
 COPY init-db.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/init-db.sh
+RUN chmod +x /usr/local/bin/init-db.sh \
+    && chown -R postgres:postgres /usr/local/share/pgconf \
+    && chmod 700 /var/lib/pgsql/data
 
-# Intentional security flaw: overly permissive file permissions (kept)
-RUN chmod 777 /var/lib/pgsql/data
-
-# Switch to postgres user for database operations (kept)
-USER postgres
-
-# Initialize the database
-RUN PG_BIN_DIR=$(find /usr -name "initdb" -type f 2>/dev/null | head -1 | xargs dirname) && \
-    echo "$POSTGRES_PASSWORD" > /tmp/pgpass && \
-    $PG_BIN_DIR/initdb -D /var/lib/pgsql/data --auth-local=md5 --auth-host=md5 --username=$POSTGRES_USER --pwfile=/tmp/pgpass && \
-    rm /tmp/pgpass
-
-# Copy PostgreSQL configuration with intentional security flaws (kept)
-USER root
-COPY postgresql.conf /var/lib/pgsql/data/
-COPY pg_hba.conf /var/lib/pgsql/data/
-RUN chown postgres:postgres /var/lib/pgsql/data/*.conf
-
-# Switch back to postgres user (kept)
+# Run the database as the unprivileged postgres user (AC-6)
 USER postgres
 
 # Expose PostgreSQL port (kept)

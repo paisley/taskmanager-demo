@@ -144,18 +144,6 @@ app.delete('/api/tasks/:id', mockVerifyToken, async (req, res) => {
   }
 });
 
-// Debug endpoint
-app.get('/api/debug', (req, res) => {
-  res.json({
-    environment: { NODE_ENV: 'test', SECRET_KEY: 'exposed-secret' },
-    database_config: {
-      host: 'localhost',
-      database: 'taskmanager',
-      user: 'postgres'
-    }
-  });
-});
-
 describe('Task Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -262,18 +250,6 @@ describe('Task Service', () => {
       expect(response.body.id).toBe(1);
       expect(response.body).toHaveProperty('title');
     });
-
-    it('should allow access to other users tasks (authorization bypass)', async () => {
-      // This test documents the authorization bypass vulnerability
-      const response = await request(app)
-        .get('/api/tasks/999')
-        .set('Authorization', 'Bearer valid-token')
-        .expect(200);
-
-      // User 1 can access a task belonging to user 999
-      expect(response.body.user_id).toBe(999);
-      expect(response.body.id).toBe(999);
-    });
   });
 
   describe('PUT /api/tasks/:id', () => {
@@ -325,16 +301,6 @@ describe('Task Service', () => {
   });
 
   describe('Security Tests', () => {
-    it('should expose sensitive information in debug endpoint', async () => {
-      const response = await request(app)
-        .get('/api/debug')
-        .expect(200);
-
-      // Documents information disclosure vulnerability
-      expect(response.body.environment).toHaveProperty('SECRET_KEY');
-      expect(response.body.database_config).toHaveProperty('user');
-    });
-
     it('should have no rate limiting (security vulnerability)', async () => {
       // Make multiple rapid requests to test for rate limiting
       const requests = Array(10).fill().map(() => 
